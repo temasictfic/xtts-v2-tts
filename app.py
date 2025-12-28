@@ -4,7 +4,6 @@ import gradio as gr
 import traceback
 import gc
 import numpy as np
-import librosa
 import tempfile
 from pydub import AudioSegment
 from pydub.effects import normalize
@@ -28,6 +27,7 @@ LANGUAGES = {
     "Japanese": "ja",
     "Korean": "ko",
     "Hindi": "hi",
+    "Hungarian": "hu",
 }
 
 # Global model instance
@@ -67,7 +67,7 @@ def cleanup_memory():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
 
-def preprocess_audio(audio_path, target_sr=24000, max_duration=30):
+def preprocess_audio(audio_path, target_sr=22050, max_duration=30):
     """Preprocess audio for voice cloning."""
     try:
         # Load with pydub for robust format handling
@@ -88,23 +88,13 @@ def preprocess_audio(audio_path, target_sr=24000, max_duration=30):
         audio = audio.set_frame_rate(target_sr)
 
         # Export to temporary WAV file
-        temp_path = audio_path.replace(os.path.splitext(audio_path)[1], '_processed.wav')
+        temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, "reference_processed.wav")
         audio.export(
             temp_path,
             format="wav",
             parameters=["-acodec", "pcm_s16le", "-ac", "1", "-ar", str(target_sr)]
         )
-
-        # Validate the audio with librosa
-        wav, sr = librosa.load(temp_path, sr=target_sr, mono=True)
-
-        # Check for invalid values
-        if np.any(np.isnan(wav)) or np.any(np.isinf(wav)):
-            raise ValueError("Audio contains NaN or infinite values")
-
-        # Ensure reasonable amplitude range
-        if np.max(np.abs(wav)) < 1e-6:
-            raise ValueError("Audio signal is too quiet")
 
         return temp_path
 
@@ -112,7 +102,7 @@ def preprocess_audio(audio_path, target_sr=24000, max_duration=30):
         print(f"Audio preprocessing failed: {e}")
         raise ValueError(f"Failed to process audio: {str(e)}")
 
-def generate_speech(reference_audio, text, language, speed, temperature, top_k, top_p, repetition_penalty):
+def generate_speech(reference_audio, text, language):
     """Generate speech with voice cloning using XTTS v2."""
     global tts_model
 
@@ -149,11 +139,6 @@ def generate_speech(reference_audio, text, language, speed, temperature, top_k, 
                 speaker_wav=processed_audio_path,
                 language=lang_code,
                 file_path=output_path,
-                speed=speed,
-                temperature=temperature,
-                top_k=int(top_k),
-                top_p=top_p,
-                repetition_penalty=repetition_penalty,
             )
 
             cleanup_memory()
@@ -181,11 +166,13 @@ def generate_speech(reference_audio, text, language, speed, temperature, top_k, 
 with gr.Blocks(title="XTTS v2 Voice Cloning", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# XTTS v2 Voice Cloning")
     gr.Markdown("""
-    **XTTS v2** is a powerful multilingual text-to-speech model by Coqui AI with zero-shot voice cloning capabilities.
+    **XTTS v2** is a powerful multilingual text-to-speech model with zero-shot voice cloning capabilities.
+
+    Using the community-maintained [coqui-tts](https://github.com/idiap/coqui-ai-TTS) fork.
 
     Upload a reference audio clip (at least 6 seconds recommended) and enter text to generate speech with the cloned voice.
 
-    **Supported Languages:** English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Russian, Dutch, Czech, Arabic, Chinese, Japanese, Korean, Hindi
+    **Supported Languages:** English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Russian, Dutch, Czech, Arabic, Chinese, Japanese, Korean, Hindi, Hungarian
     """)
     gr.Markdown("**Please use responsibly for research and educational purposes only!**")
 
@@ -207,48 +194,6 @@ with gr.Blocks(title="XTTS v2 Voice Cloning", theme=gr.themes.Soft()) as demo:
                 value="English"
             )
 
-            with gr.Accordion("Advanced Options", open=False):
-                speed = gr.Slider(
-                    label="Speed",
-                    minimum=0.5,
-                    maximum=2.0,
-                    value=1.0,
-                    step=0.1,
-                    info="Speech speed multiplier"
-                )
-                temperature = gr.Slider(
-                    label="Temperature",
-                    minimum=0.1,
-                    maximum=1.5,
-                    value=0.65,
-                    step=0.05,
-                    info="Higher = more variation, Lower = more consistent"
-                )
-                top_k = gr.Slider(
-                    label="Top-K",
-                    minimum=1,
-                    maximum=100,
-                    value=50,
-                    step=1,
-                    info="Number of top tokens to consider"
-                )
-                top_p = gr.Slider(
-                    label="Top-P",
-                    minimum=0.1,
-                    maximum=1.0,
-                    value=0.85,
-                    step=0.05,
-                    info="Cumulative probability threshold"
-                )
-                repetition_penalty = gr.Slider(
-                    label="Repetition Penalty",
-                    minimum=1.0,
-                    maximum=3.0,
-                    value=2.0,
-                    step=0.1,
-                    info="Penalty for repeating tokens"
-                )
-
             generate_btn = gr.Button("Generate Speech", variant="primary", size="lg")
 
         with gr.Column(scale=1):
@@ -259,13 +204,12 @@ with gr.Blocks(title="XTTS v2 Voice Cloning", theme=gr.themes.Soft()) as demo:
             - Use **clear, noise-free** reference audio
             - Reference audio should be **6-30 seconds** long
             - Match the **language** to your reference speaker
-            - Adjust **temperature** for more/less variation
-            - Lower **speed** for clearer pronunciation
+            - Single speaker, minimal background noise
             """)
 
     generate_btn.click(
         fn=generate_speech,
-        inputs=[reference_audio, text_input, language, speed, temperature, top_k, top_p, repetition_penalty],
+        inputs=[reference_audio, text_input, language],
         outputs=[output_audio]
     )
 
