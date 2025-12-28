@@ -1,0 +1,8 @@
+TTS>=0.22.0
+gradio>=5.0.0
+torch
+torchaudio
+pydub
+numpy
+scipy
+librosa
