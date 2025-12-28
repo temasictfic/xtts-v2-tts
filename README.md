@@ -20,7 +20,7 @@ English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Russian,
 %cd /content
 !git clone https://github.com/YOUR_USERNAME/xtts-v2-tts
 %cd /content/xtts-v2-tts
-!pip install coqui-tts gradio pydub --quiet
+!pip install torchcodec coqui-tts gradio pydub --quiet
 !python app.py
 ```
 
